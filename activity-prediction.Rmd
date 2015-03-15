@@ -1,0 +1,77 @@
+---
+title: "Practical Machine Learning: Predicting excercise quality grade"
+author: "Alex Baranov"
+date: "March 11, 2015"
+output: html_document
+---
+
+Synopsis
+--------
+This project is to build and algorithm which will analyze the data, collected from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways.
+
+Once algorithm is trained it should be able to automatically grade quality of an excercise, when given the data form the sensors.
+
+For this project I will be using the data by Human Activity Recognition project - http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).  
+
+### Loading the data
+```{r cache = TRUE}
+setwd("~/MyDigilife/Labs/Cousera/R/MachineLearning")
+if (!file.exists("pml-training.csv") | !file.exists("pml-testing.csv")) {
+  download.file("http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", "pml-training.csv")
+  download.file("http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv", "pml-testing.csv")
+}
+
+training <- read.csv("pml-training.csv", na.strings=c('#DIV/0!', '', 'NA'))
+testing <- read.csv("pml-testing.csv", na.strings=c('#DIV/0!', '', 'NA'))
+```
+
+### Cleaning data and splitting data for training and testing subsets 
+```{r cache = TRUE}
+keep.columns <- colSums(is.na(training)) < (nrow(training) * 0.9) # finding columns where NA values count is less than 90% of total row count. 
+
+training.tidy <- training[,keep.columns]
+training.tidy <- training.tidy[, !names(training.tidy) %in% c('X', 'user_name', 'raw_timestamp_part_1', 'raw_timestamp_part_2', 'cvtd_timestamp', 'new_window', 'num_window')] # taking out colums which do not affect 'classe' in any way
+
+testing.tidy <- testing[,keep.columns]
+testing.tidy <- testing.tidy[, !names(testing.tidy) %in% c('X', 'user_name', 'raw_timestamp_part_1', 'raw_timestamp_part_2', 'cvtd_timestamp', 'new_window', 'num_window')] # taking out colums which do not affect 'classe' in any way
+
+library(caret)
+inTrain <- createDataPartition(y=training.tidy$classe, p=0.7, list=FALSE)
+training.model <- training.tidy[inTrain,]
+testing.model <- training.tidy[-inTrain,]
+```
+
+### Exploring the data
+```{r fig.width=11, fig.height=16}
+library(caret)
+#str(training.model)     # commenting out as the output is too long
+#summary(training.model)
+featurePlot(training.model[,colnames(training.model)[-length(colnames(training.model))]], y=training.model$classe, pch = 16, col=adjustcolor("black", alpha=0.5), cex=0.5, scales=list(x=list(relation="free"), y=list(relation="free")), layout = c(7,8), plot="box")
+```
+We see a big set of varibles, it is quite difficult to understand from first glance which of the features contibute the most to the final score and how. So I will be using random forest algorithm to train the model and then cross-validate the results.
+
+### Training the model
+```{r}
+library(SOAR)
+
+# As calculating model on all variables took me around 20 hours, I'll cache final model using SOAR package
+# Limiting number of variable would probably speed the process up, but I've decide to go with full set.
+if (!match('modFit', Objects())) {
+  modFit <- train(classe ~ ., data=training.model, metod="rf", prox=TRUE)
+  Store(modFit)
+}
+```
+
+Now lets check out resulting model details and expected errors
+```{r}
+modFit
+```
+
+### Cross validation
+```{r}
+
+ptm <- predict(modFit, testing.model[, !names(testing.model) %in% c("classe")])
+table(ptm, testing.model$classe)
+```
+This table shows that our model is pretty accurate, with just about 12 misclassified records out of 5885.
+
